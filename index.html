@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rotoscoped Webcam</title>
+    <style>
+        body { display: flex; flex-direction: column; align-items: center; background: #333; color: #fff; }
+        video, canvas { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Rotoscoped Webcam Effect</h1>
+    <video id="webcam" autoplay playsinline width="640" height="480" style="display:none;"></video>
+    <canvas id="output" width="640" height="480"></canvas>
+
+    <!-- Load OpenCV.js -->
+    <script src="https://docs.opencv.org/3.4.0/opencv.js"></script>
+
+    <script>
+        let video, canvas, context;
+        
+        function onOpenCvReady() {
+            if (cv.getBuildInformation) {
+                console.log("OpenCV.js is ready.");
+                startWebcam();
+            } else {
+                console.error("Failed to load OpenCV.js");
+            }
+        }
+
+        window.onload = function() {
+            onOpenCvReady();
+        };
+
+        function startWebcam() {
+            video = document.getElementById('webcam');
+            canvas = document.getElementById('output');
+            context = canvas.getContext('2d');
+
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.play();
+                    processFrame();
+                })
+                .catch(err => console.error("Error accessing webcam:", err));
+        }
+
+        function enhanceContrast(src) {
+            const gray = new cv.Mat();
+            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+            const enhanced = new cv.Mat();
+            cv.equalizeHist(gray, enhanced);
+            gray.delete();
+            return enhanced;
+        }
+
+        function getEdgeMask(src) {
+            const edges = new cv.Mat();
+            cv.Canny(src, edges, 100, 200);
+            const dilatedEdges = new cv.Mat();
+            const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+            cv.dilate(edges, dilatedEdges, kernel);
+            edges.delete();
+            kernel.delete();
+            return dilatedEdges;
+        }
+
+        function processFrame() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                const src = new cv.Mat(video.height, video.width, cv.CV_8UC4);
+                const cap = new cv.VideoCapture(video);
+                cap.read(src);
+
+                // Enhance contrast
+                const contrastFrame = enhanceContrast(src);
+                
+                // Detect edges and apply a mask
+                const edgeMask = getEdgeMask(contrastFrame);
+                const edgeMask3ch = new cv.Mat();
+                cv.cvtColor(edgeMask, edgeMask3ch, cv.COLOR_GRAY2RGBA);
+
+                // Apply rotoscope effect
+                const rotoscopedFrame = new cv.Mat();
+                cv.bitwise_and(src, edgeMask3ch, rotoscopedFrame);
+
+                cv.imshow('output', rotoscopedFrame);
+
+                // Cleanup
+                src.delete();
+                contrastFrame.delete();
+                edgeMask.delete();
+                edgeMask3ch.delete();
+                rotoscopedFrame.delete();
+            }
+            requestAnimationFrame(processFrame);
+        }
+    </script>
+</body>
+</html>
